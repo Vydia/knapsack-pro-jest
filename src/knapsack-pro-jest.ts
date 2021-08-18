@@ -25,7 +25,7 @@ knapsackProLogger.debug(
 EnvConfig.loadEnvironmentVariables();
 
 const projectPath = process.cwd();
-const allTestFiles: TestFile[] = TestFilesFinder.allTestFiles();
+const allTestFiles: TestFile[] = await TestFilesFinder.allTestFiles();
 const knapsackPro = new KnapsackProCore(
   clientName,
   clientVersion,
@@ -37,48 +37,59 @@ const onSuccess: onQueueSuccessType = async (queueTestFiles: TestFile[]) => {
     (testFile: TestFile) => testFile.path
   );
 
+  let isOuterTestSuiteGreen = true
+
   const jestCLICoverage = EnvConfig.coverageDirectory
     ? { coverageDirectory: `${EnvConfig.coverageDirectory}/${uuidv4()}` }
     : {};
 
-  const {
-    results: { success: isTestSuiteGreen, testResults },
-  } = await jest.runCLI(
-    {
-      ...jestCLIOptions,
-      ...jestCLICoverage,
-      runTestsByPath: true,
-      _: testFilePaths,
-    },
-    [projectPath]
-  );
+  const allResults = (await Promise.all(testFilePaths.map(async (complexTestFilePath) => {
+    const [testFilePath, testName] = complexTestFilePath.split('|', 2)
+    const {
+      results: { success: isTestSuiteGreen, testResults },
+    } = await jest.runCLI(
+      {
+        ...jestCLIOptions,
+        ...jestCLICoverage,
+        runTestsByPath: true,
+        testNamePattern: testName, // TODO: Regex start and end pattern?
+        _: testFilePath,
+      },
+      [projectPath]
+    );
 
-  const recordedTestFiles: TestFile[] = testResults.map(
-    ({
-      testFilePath,
-      perfStats: { start, end },
-    }: {
-      testFilePath: string;
-      perfStats: { start: number; end: number };
-    }) => {
-      const path =
-        process.platform === 'win32'
-          ? testFilePath.replace(`${projectPath}\\`, '').replace(/\\/g, '/')
-          : testFilePath.replace(`${projectPath}/`, '');
-      const timeExecutionMiliseconds = end - start;
-      const timeExecution =
-        timeExecutionMiliseconds > 0 ? timeExecutionMiliseconds / 1000 : 0.0;
+    if (!isTestSuiteGreen) isOuterTestSuiteGreen = false
 
-      return {
-        path,
-        time_execution: timeExecution,
-      };
-    }
-  );
+    const recordedTestFiles: TestFile[] = testResults.map(
+      ({
+        testFilePath: _,
+        perfStats: { start, end },
+      }: {
+        testFilePath: string;
+        perfStats: { start: number; end: number };
+      }) => {
+        // We only run jest cli once per testNamePattern so I think we don't need to parse this anymore.
+        // const path =
+        //   process.platform === 'win32'
+        //     ? testFilePath.replace(`${projectPath}\\`, '').replace(/\\/g, '/')
+        //     : testFilePath.replace(`${projectPath}/`, '');
+        const timeExecutionMiliseconds = end - start;
+        const timeExecution =
+          timeExecutionMiliseconds > 0 ? timeExecutionMiliseconds / 1000 : 0.0;
+
+        return {
+          path: complexTestFilePath,
+          time_execution: timeExecution,
+        };
+      }
+    );
+
+    return recordedTestFiles
+  }))).flat()
 
   return {
-    recordedTestFiles,
-    isTestSuiteGreen,
+    recordedTestFiles: allResults,
+    isTestSuiteGreen: isOuterTestSuiteGreen,
   };
 };
 

@@ -1,10 +1,12 @@
 {
   "compilerOptions": {
+    "module": "system",
+    "esModuleInterop": true,
     "noImplicitAny": true,
     "outDir": "lib",
     "removeComments": true,
-    "target": "es5",
-    "lib": ["es2015", "es2016.array.include"]
+    "target": "es2019",
+    "lib": ["es2015", "es2016.array.include", "es2019"],
   },
   "include": ["src/**/*.ts"]
 }
